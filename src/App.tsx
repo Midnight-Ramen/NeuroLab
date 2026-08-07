@@ -1,14 +1,22 @@
 import {
   Activity,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   CircleStop,
   FlaskConical,
+  Gauge,
   Lightbulb,
+  Pause,
   PlugZap,
+  Play,
   RadioTower,
   RotateCcw,
   ShieldAlert,
+  SlidersHorizontal,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FinchClient,
   FINCH_BASE_URL,
@@ -34,6 +42,16 @@ const colorCommands = [
   { label: "Off", color: [0, 0, 0], className: "dark" },
 ] as const;
 
+const movementCommands = [
+  { label: "Forward", icon: ArrowUp, left: 32, right: 32 },
+  { label: "Left", icon: ArrowLeft, left: -26, right: 26 },
+  { label: "Right", icon: ArrowRight, left: 26, right: -26 },
+  { label: "Back", icon: ArrowDown, left: -26, right: -26 },
+] as const;
+
+const COMMAND_COOLDOWN_MS = 260;
+const MOVEMENT_PULSE_MS = 650;
+
 function nowLabel() {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -50,6 +68,16 @@ export function App() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<FinchResult | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [focus, setFocus] = useState(0.58);
+  const [threshold, setThreshold] = useState(0.7);
+  const [experimentRunning, setExperimentRunning] = useState(false);
+  const [driveWithFocus, setDriveWithFocus] = useState(false);
+  const [experimentMode, setExperimentMode] = useState<"manual" | "sweep">(
+    "manual",
+  );
+  const lastCommandAtRef = useRef(0);
+  const movementStopRef = useRef<number | null>(null);
+  const experimentLastFocusRef = useRef<number | null>(null);
 
   const finch = useMemo(() => new FinchClient(robot, baseUrl), [baseUrl, robot]);
 
@@ -61,6 +89,36 @@ export function App() {
     window.addEventListener("pagehide", stopOnExit);
     return () => window.removeEventListener("pagehide", stopOnExit);
   }, [finch]);
+
+  useEffect(() => {
+    if (!experimentRunning || experimentMode !== "sweep") {
+      return;
+    }
+
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsed = (Date.now() - startedAt) / 1000;
+      const wave = (Math.sin(elapsed * 1.35) + 1) / 2;
+      setFocus(Number((0.25 + wave * 0.65).toFixed(2)));
+    }, 650);
+
+    return () => window.clearInterval(interval);
+  }, [experimentMode, experimentRunning]);
+
+  useEffect(() => {
+    if (!experimentRunning || state !== "connected") {
+      return;
+    }
+
+    const previousFocus = experimentLastFocusRef.current;
+
+    if (previousFocus !== null && Math.abs(previousFocus - focus) < 0.04) {
+      return;
+    }
+
+    experimentLastFocusRef.current = focus;
+    void applyFocusExperiment(focus);
+  }, [experimentRunning, focus, state]);
 
   const addLog = (
     label: string,
@@ -136,6 +194,11 @@ export function App() {
     label: string,
     command: () => Promise<FinchResult>,
   ) => {
+    if (!canSendCommand()) {
+      addLog(label, "warn", "Command skipped to avoid sending commands too quickly.");
+      return;
+    }
+
     setBusyLabel(label);
     const result = await command();
     setLastResult(result);
@@ -151,7 +214,59 @@ export function App() {
     setBusyLabel(null);
   };
 
+  const runEmergencyStop = async () => {
+    setExperimentRunning(false);
+    clearPendingMovementStop();
+    await runCommand("Emergency stop", () => finch.stop());
+  };
+
+  const runMovementPulse = async (label: string, left: number, right: number) => {
+    clearPendingMovementStop();
+    await runCommand(label, () => finch.setWheels(left, right));
+    movementStopRef.current = window.setTimeout(() => {
+      void runCommand("Auto stop", () => finch.stopFinch({ timeoutMs: 1000 }));
+    }, MOVEMENT_PULSE_MS);
+  };
+
+  const applyFocusExperiment = async (value: number) => {
+    const focused = value >= threshold;
+    const intensity = Math.round(value * 255);
+    const beak = focused
+      ? [0, Math.max(90, intensity), 30]
+      : [Math.max(90, 255 - intensity), 20, 0];
+
+    await runCommand("Focus signal", () => finch.setBeak(beak[0], beak[1], beak[2]));
+
+    if (driveWithFocus) {
+      const speed = focused ? Math.min(42, Math.round(value * 44)) : 0;
+      await runCommand("Focus drive", () =>
+        speed > 0 ? finch.setWheels(speed, speed) : finch.stopFinch(),
+      );
+    }
+  };
+
+  const canSendCommand = () => {
+    const now = Date.now();
+
+    if (now - lastCommandAtRef.current < COMMAND_COOLDOWN_MS) {
+      return false;
+    }
+
+    lastCommandAtRef.current = now;
+    return true;
+  };
+
+  const clearPendingMovementStop = () => {
+    if (movementStopRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(movementStopRef.current);
+    movementStopRef.current = null;
+  };
+
   const statusCopy = getStatusCopy(state, isFinch);
+  const focusPercent = Math.round(focus * 100);
 
   return (
     <main>
@@ -161,10 +276,10 @@ export function App() {
             <FlaskConical size={16} aria-hidden="true" />
             NeuroFinch Lab
           </p>
-          <h1>Browser to BlueBird Finch test</h1>
+          <h1>NeuroLab Finch control</h1>
           <p>
-            A first-pass classroom console for proving that Chrome can reach
-            BlueBird Connector on localhost before adding Neurosity signals.
+            A classroom-ready bridge for testing Finch commands today and
+            rehearsing brain-signal experiments before adding Neurosity.
           </p>
         </div>
 
@@ -176,6 +291,16 @@ export function App() {
           <PathNode label={`Finch ${robot}`} active={isFinch === true} />
         </div>
       </section>
+
+      <button
+        className="emergency-stop"
+        onClick={runEmergencyStop}
+        disabled={busyLabel !== null}
+        title="Immediately stop Finch outputs"
+      >
+        <CircleStop size={22} aria-hidden="true" />
+        STOP
+      </button>
 
       <section className="workspace">
         <div className="control-panel">
@@ -245,6 +370,27 @@ export function App() {
             </button>
           </div>
 
+          <div className="movement-panel">
+            <div>
+              <p className="section-kicker">Safe Motion</p>
+              <h2>Short movement pulses</h2>
+            </div>
+            <div className="movement-grid" aria-label="Finch movement controls">
+              {movementCommands.map(({ label, icon: Icon, left, right }) => (
+                <button
+                  key={label}
+                  className={`move-button ${label.toLowerCase()}`}
+                  onClick={() => runMovementPulse(label, left, right)}
+                  disabled={busyLabel !== null || state !== "connected"}
+                  title={`${label} for ${MOVEMENT_PULSE_MS} milliseconds`}
+                >
+                  <Icon size={19} aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="color-grid" aria-label="Beak color controls">
             {colorCommands.map(({ label, color, className }) => (
               <button
@@ -291,6 +437,109 @@ export function App() {
             </div>
           </div>
         </aside>
+      </section>
+
+      <section className="experiment-band">
+        <div className="experiment-panel">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Experiment 01</p>
+              <h2>Focus simulator</h2>
+            </div>
+            <span className={experimentRunning ? "status connected" : "status idle"}>
+              {experimentRunning ? "Running" : "Paused"}
+            </span>
+          </div>
+
+          <div className="focus-meter" aria-label="Simulated focus meter">
+            <div className="focus-value">
+              <Gauge size={24} aria-hidden="true" />
+              <strong>{focus.toFixed(2)}</strong>
+              <span>{focusPercent}%</span>
+            </div>
+            <div className="meter-track">
+              <div style={{ width: `${focusPercent}%` }} />
+              <span style={{ left: `${threshold * 100}%` }} />
+            </div>
+          </div>
+
+          <div className="experiment-controls">
+            <label>
+              Focus
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={focus}
+                onChange={(event) => setFocus(Number(event.target.value))}
+                disabled={experimentMode === "sweep" && experimentRunning}
+              />
+            </label>
+            <label>
+              Threshold
+              <input
+                type="range"
+                min="0.35"
+                max="0.95"
+                step="0.01"
+                value={threshold}
+                onChange={(event) => setThreshold(Number(event.target.value))}
+              />
+            </label>
+          </div>
+
+          <div className="experiment-actions">
+            <button
+              className={experimentRunning ? "danger" : "primary"}
+              onClick={() => {
+                setExperimentRunning((running) => !running);
+                experimentLastFocusRef.current = null;
+              }}
+              disabled={state !== "connected" || busyLabel !== null}
+              title="Start or pause the focus-to-Finch experiment"
+            >
+              {experimentRunning ? (
+                <Pause size={18} aria-hidden="true" />
+              ) : (
+                <Play size={18} aria-hidden="true" />
+              )}
+              {experimentRunning ? "Pause" : "Run"}
+            </button>
+            <button
+              onClick={() =>
+                setExperimentMode((mode) =>
+                  mode === "manual" ? "sweep" : "manual",
+                )
+              }
+              disabled={busyLabel !== null}
+              title="Toggle manual focus control or automatic sweep"
+            >
+              <SlidersHorizontal size={18} aria-hidden="true" />
+              {experimentMode === "manual" ? "Manual" : "Sweep"}
+            </button>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={driveWithFocus}
+                onChange={(event) => setDriveWithFocus(event.target.checked)}
+              />
+              Drive
+            </label>
+          </div>
+        </div>
+
+        <div className="student-code">
+          <p className="section-kicker">Student API Shape</p>
+          <h2>Next coding layer</h2>
+          <pre>{`brain.onFocus((focus) => {
+  if (focus > ${threshold.toFixed(2)}) {
+    finch.beak("green");
+  } else {
+    finch.beak("red");
+  }
+});`}</pre>
+        </div>
       </section>
 
       <section className="data-band">

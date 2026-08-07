@@ -66,6 +66,20 @@ export class FinchClient {
     return this.request(`/out/triled/1/${r}/${g}/${b}/${this.robot}`, options);
   }
 
+  setWheels(
+    leftSpeed: number,
+    rightSpeed: number,
+    options?: RequestOptions,
+  ): Promise<FinchResult> {
+    const left = clampSpeed(leftSpeed);
+    const right = clampSpeed(rightSpeed);
+    return this.request(`/out/wheels/${this.robot}/${left}/${right}`, options);
+  }
+
+  stopFinch(options?: RequestOptions): Promise<FinchResult> {
+    return this.request(`/out/stopFinch/${this.robot}`, options);
+  }
+
   stop(options?: RequestOptions): Promise<FinchResult> {
     return this.request(`/out/stopall/${this.robot}`, options);
   }
@@ -129,6 +143,10 @@ export const FINCH_BASE_URL = DEFAULT_BASE_URL;
 
 function clampColor(value: number) {
   return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function clampSpeed(value: number) {
+  return Math.max(-100, Math.min(100, Math.round(value)));
 }
 
 function parseBlueBirdDetection(value: string) {
