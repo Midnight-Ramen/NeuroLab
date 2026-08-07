@@ -4,6 +4,9 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  BadgeCheck,
+  Bluetooth,
+  CheckCircle2,
   CircleStop,
   FlaskConical,
   Gauge,
@@ -15,6 +18,7 @@ import {
   RotateCcw,
   ShieldAlert,
   SlidersHorizontal,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -34,6 +38,8 @@ type LogEntry = {
   detail: string;
   timestamp: string;
 };
+
+type IdentityState = "unknown" | "identifying" | "confirmed" | "wrong";
 
 const colorCommands = [
   { label: "Red", color: [255, 0, 0], className: "red" },
@@ -68,6 +74,17 @@ export function App() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<FinchResult | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [stationId, setStationId] = useState(
+    () => window.localStorage.getItem("neurolab.stationId") ?? "7",
+  );
+  const [finchLabel, setFinchLabel] = useState(
+    () => window.localStorage.getItem("neurolab.finchLabel") ?? "FINCH 07",
+  );
+  const [bluetoothName, setBluetoothName] = useState(
+    () => window.localStorage.getItem("neurolab.bluetoothName") ?? "",
+  );
+  const [identityState, setIdentityState] =
+    useState<IdentityState>("unknown");
   const [focus, setFocus] = useState(0.58);
   const [threshold, setThreshold] = useState(0.7);
   const [experimentRunning, setExperimentRunning] = useState(false);
@@ -80,6 +97,12 @@ export function App() {
   const experimentLastFocusRef = useRef<number | null>(null);
 
   const finch = useMemo(() => new FinchClient(robot, baseUrl), [baseUrl, robot]);
+
+  useEffect(() => {
+    window.localStorage.setItem("neurolab.stationId", stationId);
+    window.localStorage.setItem("neurolab.finchLabel", finchLabel);
+    window.localStorage.setItem("neurolab.bluetoothName", bluetoothName);
+  }, [bluetoothName, finchLabel, stationId]);
 
   useEffect(() => {
     const stopOnExit = () => {
@@ -149,6 +172,7 @@ export function App() {
     if (result.success && result.isFinch === true) {
       setIsFinch(true);
       setState("connected");
+      setIdentityState("unknown");
       addLog(
         "Detect",
         "good",
@@ -166,6 +190,7 @@ export function App() {
         setRobot(foundRobot.robot);
         setIsFinch(true);
         setState("connected");
+        setIdentityState("unknown");
         setLastResult(foundRobot.result);
         addLog(
           "Detect",
@@ -183,6 +208,7 @@ export function App() {
       }
     } else {
       setIsFinch(undefined);
+      setIdentityState("unknown");
       setState(result.error.includes("blocked") ? "blocked" : "failed");
       addLog("Detect", "bad", result.error);
     }
@@ -216,8 +242,59 @@ export function App() {
 
   const runEmergencyStop = async () => {
     setExperimentRunning(false);
+    setIdentityState((current) =>
+      current === "identifying" ? "unknown" : current,
+    );
     clearPendingMovementStop();
     await runCommand("Emergency stop", () => finch.stop());
+  };
+
+  const runIdentifyFinch = async () => {
+    if (state !== "connected") {
+      addLog("Identify", "warn", "Run Detect before identifying the Finch.");
+      return;
+    }
+
+    setBusyLabel("Identify");
+    setIdentityState("identifying");
+
+    const stationMessage = stationId.trim()
+      ? `ST ${stationId.trim()}`
+      : finchLabel.replace(/\s+/g, " ").trim();
+    const sequence: Array<() => Promise<FinchResult>> = [
+      () => finch.setBeak(130, 0, 255),
+      () => finch.setTail("all", 130, 0, 255),
+      () => finch.print(stationMessage),
+      () => finch.playNote(72, 0.12),
+      () => finch.playNote(84, 0.12),
+    ];
+
+    let failed = false;
+
+    for (const command of sequence) {
+      const result = await command();
+      setLastResult(result);
+
+      if (!result.success) {
+        failed = true;
+        addLog("Identify", "bad", result.error);
+        break;
+      }
+
+      await sleep(120);
+    }
+
+    if (!failed) {
+      addLog(
+        "Identify",
+        "good",
+        `${finchLabel || `Finch ${robot}`} should now be purple with a short beep.`,
+      );
+    } else {
+      setIdentityState("unknown");
+    }
+
+    setBusyLabel(null);
   };
 
   const runMovementPulse = async (label: string, left: number, right: number) => {
@@ -267,6 +344,7 @@ export function App() {
 
   const statusCopy = getStatusCopy(state, isFinch);
   const focusPercent = Math.round(focus * 100);
+  const wizardStep = getWizardStep(state, identityState);
 
   return (
     <main>
@@ -302,6 +380,141 @@ export function App() {
         STOP
       </button>
 
+      <section className="setup-wizard">
+        <div className="wizard-panel">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Startup Wizard</p>
+              <h2>Step {wizardStep} of 4</h2>
+            </div>
+            <span className="station-pill">
+              Station {stationId || "-"} · {finchLabel || `Finch ${robot}`}
+            </span>
+          </div>
+
+          <div className="label-grid">
+            <label>
+              Station
+              <input
+                value={stationId}
+                onChange={(event) => setStationId(event.target.value)}
+                placeholder="7"
+              />
+            </label>
+            <label>
+              Finch label
+              <input
+                value={finchLabel}
+                onChange={(event) => setFinchLabel(event.target.value)}
+                placeholder="FINCH 07"
+              />
+            </label>
+            <label>
+              Bluetooth name on sticker
+              <input
+                value={bluetoothName}
+                onChange={(event) => setBluetoothName(event.target.value)}
+                placeholder="ABC#FN7K29P"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+
+          <div className="wizard-steps">
+            <WizardStep
+              complete={state !== "idle" && state !== "blocked"}
+              active={wizardStep === 1}
+              icon={Bluetooth}
+              title="BlueBird Connector"
+              detail={
+                state === "blocked"
+                  ? "Chrome cannot reach BlueBird yet."
+                  : state === "idle"
+                    ? "Open BlueBird and connect your assigned Finch."
+                    : "BlueBird answered this browser."
+              }
+            />
+            <WizardStep
+              complete={state === "connected"}
+              active={wizardStep === 2}
+              icon={RadioTower}
+              title={`Finch ${robot}`}
+              detail={
+                state === "connected"
+                  ? "Finch is connected through BlueBird."
+                  : `Connect only ${finchLabel || "your Finch"} ${bluetoothName ? `(${bluetoothName})` : ""}.`
+              }
+            />
+            <WizardStep
+              complete={identityState === "confirmed"}
+              active={wizardStep === 3}
+              icon={BadgeCheck}
+              title="Identify my Finch"
+              detail={
+                identityState === "confirmed"
+                  ? "Student confirmed the flashing Finch."
+                  : identityState === "wrong"
+                    ? "Wrong robot. Disconnect in BlueBird and choose the sticker code."
+                    : "Flash purple, show station text, and beep before any driving."
+              }
+            />
+            <WizardStep
+              complete={identityState === "confirmed"}
+              active={wizardStep === 4}
+              icon={CheckCircle2}
+              title="Ready for NeuroLab"
+              detail="Crown setup is coming next; Finch lab controls are available now."
+            />
+          </div>
+
+          <div className="wizard-actions">
+            <button
+              className="primary"
+              onClick={runDetect}
+              disabled={busyLabel !== null}
+              title="Check BlueBird and find the connected Finch"
+            >
+              <RadioTower size={18} aria-hidden="true" />
+              Detect
+            </button>
+            <button
+              onClick={runIdentifyFinch}
+              disabled={busyLabel !== null || state !== "connected"}
+              title="Flash the selected Finch without moving it"
+            >
+              <Lightbulb size={18} aria-hidden="true" />
+              Identify Finch
+            </button>
+            <button
+              onClick={() => setIdentityState("confirmed")}
+              disabled={identityState !== "identifying"}
+              title="Confirm that the flashing Finch matches this station"
+            >
+              <CheckCircle2 size={18} aria-hidden="true" />
+              Yes, mine
+            </button>
+            <button
+              className="secondary-danger"
+              onClick={() => setIdentityState("wrong")}
+              disabled={identityState !== "identifying"}
+              title="Mark this as the wrong Finch"
+            >
+              <XCircle size={18} aria-hidden="true" />
+              No
+            </button>
+          </div>
+
+          {identityState === "wrong" ? (
+            <div className="wrong-robot-note">
+              Disconnect Finch {robot} in BlueBird. Connect{" "}
+              <strong>{finchLabel || "your labeled Finch"}</strong>
+              {bluetoothName ? <strong> · {bluetoothName}</strong> : null}, then
+              click Detect and Identify Finch again.
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <section className="workspace">
         <div className="control-panel">
           <div className="panel-header">
@@ -321,6 +534,7 @@ export function App() {
                   setRobot(event.target.value as RobotId);
                   setState("idle");
                   setIsFinch(undefined);
+                  setIdentityState("unknown");
                 }}
               >
                 <option value="A">A</option>
@@ -598,6 +812,52 @@ async function findConnectedFinch(currentRobot: RobotId, baseUrl: string) {
   }
 
   return null;
+}
+
+function WizardStep({
+  active,
+  complete,
+  detail,
+  icon: Icon,
+  title,
+}: {
+  active: boolean;
+  complete: boolean;
+  detail: string;
+  icon: typeof Bluetooth;
+  title: string;
+}) {
+  return (
+    <div className={`wizard-step ${active ? "active" : ""} ${complete ? "complete" : ""}`}>
+      <div className="wizard-icon">
+        <Icon size={20} aria-hidden="true" />
+      </div>
+      <div>
+        <h3>{title}</h3>
+        <p>{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function getWizardStep(state: ConnectionState, identityState: IdentityState) {
+  if (identityState === "confirmed") {
+    return 4;
+  }
+
+  if (state === "connected") {
+    return 3;
+  }
+
+  if (state === "checking" || state === "failed" || state === "blocked") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function PathNode({ label, active }: { label: string; active: boolean }) {

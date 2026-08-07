@@ -18,6 +18,41 @@ http://127.0.0.1:30061/hummingbird
 
 If the deployed site cannot reach BlueBird but a local preview can, the likely issue is Chrome local network/CORS handling for a public HTTPS page calling a localhost HTTP service.
 
+## Multi-Finch Station Setup
+
+When several Finches are in the same room, label each robot and laptop before students connect in BlueBird.
+
+Example robot label:
+
+```text
+FINCH 07
+Bluetooth: ABC#FN7K29P
+Assigned Station: 7
+```
+
+Put the same label on the laptop:
+
+```text
+STATION 7
+FINCH 07
+ABC#FN7K29P
+```
+
+Student instruction:
+
+```text
+In BlueBird, connect only to the Finch whose code matches the sticker on your computer.
+```
+
+NeuroLab includes a startup wizard for this:
+
+1. Detect BlueBird.
+2. Detect the connected Finch A/B/C.
+3. Identify the Finch without driving it.
+4. Confirm that the flashing Finch is yours.
+
+The Identify step turns the beak and tail purple, prints the station label on the micro:bit display, and plays two short notes. If the wrong robot flashes, disconnect that robot in BlueBird and connect the Finch whose Bluetooth name matches the station sticker.
+
 ## Scripts
 
 ```bash

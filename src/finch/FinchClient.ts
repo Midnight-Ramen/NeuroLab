@@ -27,6 +27,8 @@ export type FinchDetection = FinchResult & {
   isFinch?: boolean;
 };
 
+export type TailPort = 1 | 2 | 3 | 4 | "all";
+
 type RequestOptions = {
   timeoutMs?: number;
 };
@@ -64,6 +66,43 @@ export class FinchClient {
     const g = clampColor(green);
     const b = clampColor(blue);
     return this.request(`/out/triled/1/${r}/${g}/${b}/${this.robot}`, options);
+  }
+
+  setTail(
+    port: TailPort,
+    red: number,
+    green: number,
+    blue: number,
+    options?: RequestOptions,
+  ): Promise<FinchResult> {
+    const tailPort = port === "all" ? "all" : port + 1;
+    const r = clampColor(red);
+    const g = clampColor(green);
+    const b = clampColor(blue);
+    return this.request(
+      `/out/triled/${tailPort}/${r}/${g}/${b}/${this.robot}`,
+      options,
+    );
+  }
+
+  print(message: string, options?: RequestOptions): Promise<FinchResult> {
+    const safeMessage = encodeURIComponent(
+      message.replace(/[^a-zA-Z0-9 ]/g, "").slice(0, 12) || this.robot,
+    );
+    return this.request(`/out/print/${safeMessage}/${this.robot}`, options);
+  }
+
+  playNote(
+    midiNote: number,
+    seconds: number,
+    options?: RequestOptions,
+  ): Promise<FinchResult> {
+    const note = Math.max(32, Math.min(135, Math.round(midiNote)));
+    const durationMs = Math.max(0, Math.min(16000, Math.round(seconds * 1000)));
+    return this.request(
+      `/out/playnote/${note}/${durationMs}/${this.robot}`,
+      options,
+    );
   }
 
   setWheels(

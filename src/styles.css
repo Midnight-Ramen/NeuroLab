@@ -112,6 +112,13 @@ h2 {
   letter-spacing: 0;
 }
 
+h3 {
+  margin: 0 0 5px;
+  color: #17211d;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
 .hero p:not(.eyebrow) {
   max-width: 650px;
   margin-bottom: 0;
@@ -173,7 +180,12 @@ h2 {
   gap: 24px;
 }
 
+.setup-wizard {
+  padding: 28px clamp(20px, 5vw, 72px) 0;
+}
+
 .control-panel,
+.wizard-panel,
 .log-panel,
 .raw-panel,
 .diagnostic-card {
@@ -184,9 +196,98 @@ h2 {
 }
 
 .control-panel,
+.wizard-panel,
 .log-panel,
 .raw-panel {
   padding: 24px;
+}
+
+.station-pill {
+  min-height: 34px;
+  max-width: 100%;
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: #24483b;
+  background: #e4f4ed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.label-grid {
+  display: grid;
+  grid-template-columns: 130px minmax(160px, 220px) minmax(220px, 1fr);
+  gap: 16px;
+}
+
+.wizard-steps {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wizard-step {
+  min-height: 132px;
+  border: 1px solid #dce4df;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfa;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.wizard-step.active {
+  border-color: #8aa197;
+  box-shadow: inset 0 0 0 1px #8aa197;
+}
+
+.wizard-step.complete {
+  border-color: #a5ddbc;
+  background: #f1fbf5;
+}
+
+.wizard-step p {
+  margin: 0;
+  color: #5d7168;
+  font-size: 0.9rem;
+  line-height: 1.42;
+}
+
+.wizard-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: #1c6d51;
+  background: #e1f5eb;
+  display: grid;
+  place-items: center;
+}
+
+.wizard-actions {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.secondary-danger {
+  color: #8c2d25;
+  border-color: #efc5c0;
+  background: #fff2f0;
+}
+
+.wrong-robot-note {
+  margin-top: 16px;
+  border: 1px solid #f1c8a7;
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: #694018;
+  background: #fff7ed;
+  line-height: 1.5;
 }
 
 .panel-header {
@@ -589,6 +690,11 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .label-grid,
+  .wizard-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .hero {
     min-height: auto;
   }
@@ -614,7 +720,10 @@ pre {
   .button-row,
   .color-grid,
   .experiment-controls,
-  .experiment-actions {
+  .experiment-actions,
+  .label-grid,
+  .wizard-steps,
+  .wizard-actions {
     grid-template-columns: 1fr;
   }
 
