@@ -352,7 +352,7 @@ export function App() {
         <div className="hero-copy">
           <p className="eyebrow">
             <FlaskConical size={16} aria-hidden="true" />
-            NeuroFinch Lab
+            NeuroLab
           </p>
           <h1>NeuroLab Finch control</h1>
           <p>

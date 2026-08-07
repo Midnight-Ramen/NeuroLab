@@ -1,6 +1,6 @@
-# NeuroFinch BlueBird Browser Test
+# NeuroLab BlueBird Browser Test
 
-This is the first milestone for the NeuroFinch idea: prove that a browser app can talk to BirdBrain BlueBird Connector on the student's own computer.
+This is the first milestone for NeuroLab: prove that a browser app can talk to BirdBrain BlueBird Connector on the student's own computer.
 
 The app is intentionally client-only. Vercel can host the files, but all Finch commands are sent from Chrome directly to:
 
