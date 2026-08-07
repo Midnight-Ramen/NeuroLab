@@ -6,11 +6,13 @@ import {
   ArrowUp,
   BadgeCheck,
   Bluetooth,
+  Brain,
   CheckCircle2,
   CircleStop,
   FlaskConical,
   Gauge,
   Lightbulb,
+  LogOut,
   Pause,
   PlugZap,
   Play,
@@ -28,6 +30,10 @@ import {
   type FinchResult,
   type RobotId,
 } from "./finch/FinchClient";
+import type {
+  NeurosityClient,
+  NeurositySnapshot,
+} from "./neurosity/NeurosityClient";
 
 type ConnectionState = "idle" | "checking" | "connected" | "blocked" | "failed";
 
@@ -40,6 +46,7 @@ type LogEntry = {
 };
 
 type IdentityState = "unknown" | "identifying" | "confirmed" | "wrong";
+type CrownState = "idle" | "connecting" | "connected" | "failed";
 
 const colorCommands = [
   { label: "Red", color: [255, 0, 0], className: "red" },
@@ -85,6 +92,21 @@ export function App() {
   );
   const [identityState, setIdentityState] =
     useState<IdentityState>("unknown");
+  const [crownState, setCrownState] = useState<CrownState>("idle");
+  const [crownEmail, setCrownEmail] = useState(
+    () => window.localStorage.getItem("neurolab.crownEmail") ?? "",
+  );
+  const [crownPassword, setCrownPassword] = useState("");
+  const [crownSelector, setCrownSelector] = useState(
+    () => window.localStorage.getItem("neurolab.crownSelector") ?? "",
+  );
+  const [crownDeviceName, setCrownDeviceName] = useState("");
+  const [crownBattery, setCrownBattery] = useState<number | null>(null);
+  const [crownStatus, setCrownStatus] = useState("Not connected");
+  const [signalQuality, setSignalQuality] = useState<number | null>(null);
+  const [brainSource, setBrainSource] = useState<"simulator" | "crown">(
+    "simulator",
+  );
   const [focus, setFocus] = useState(0.58);
   const [threshold, setThreshold] = useState(0.7);
   const [experimentRunning, setExperimentRunning] = useState(false);
@@ -95,6 +117,7 @@ export function App() {
   const lastCommandAtRef = useRef(0);
   const movementStopRef = useRef<number | null>(null);
   const experimentLastFocusRef = useRef<number | null>(null);
+  const neurosityClientRef = useRef<NeurosityClient | null>(null);
 
   const finch = useMemo(() => new FinchClient(robot, baseUrl), [baseUrl, robot]);
 
@@ -103,6 +126,17 @@ export function App() {
     window.localStorage.setItem("neurolab.finchLabel", finchLabel);
     window.localStorage.setItem("neurolab.bluetoothName", bluetoothName);
   }, [bluetoothName, finchLabel, stationId]);
+
+  useEffect(() => {
+    window.localStorage.setItem("neurolab.crownEmail", crownEmail);
+    window.localStorage.setItem("neurolab.crownSelector", crownSelector);
+  }, [crownEmail, crownSelector]);
+
+  useEffect(() => {
+    return () => {
+      void neurosityClientRef.current?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const stopOnExit = () => {
@@ -114,7 +148,11 @@ export function App() {
   }, [finch]);
 
   useEffect(() => {
-    if (!experimentRunning || experimentMode !== "sweep") {
+    if (
+      !experimentRunning ||
+      experimentMode !== "sweep" ||
+      brainSource === "crown"
+    ) {
       return;
     }
 
@@ -126,7 +164,7 @@ export function App() {
     }, 650);
 
     return () => window.clearInterval(interval);
-  }, [experimentMode, experimentRunning]);
+  }, [brainSource, experimentMode, experimentRunning]);
 
   useEffect(() => {
     if (!experimentRunning || state !== "connected") {
@@ -247,6 +285,81 @@ export function App() {
     );
     clearPendingMovementStop();
     await runCommand("Emergency stop", () => finch.stop());
+  };
+
+  const connectCrown = async () => {
+    setCrownState("connecting");
+    setBrainSource("crown");
+    setCrownStatus("Connecting");
+    setSignalQuality(null);
+    setCrownBattery(null);
+
+    const { NeurosityClient } = await import("./neurosity/NeurosityClient");
+    const client = new NeurosityClient();
+    neurosityClientRef.current = client;
+
+    try {
+      const device = await client.connect(
+        {
+          email: crownEmail.trim(),
+          password: crownPassword,
+          deviceSelector: crownSelector,
+        },
+        {
+          onSnapshot: handleNeurositySnapshot,
+          onError: (message) => {
+            setCrownState("failed");
+            setCrownStatus(message);
+            addLog("Crown", "bad", message);
+          },
+        },
+      );
+
+      setCrownState("connected");
+      setCrownPassword("");
+      setCrownDeviceName(device.deviceNickname || device.deviceId);
+      addLog("Crown", "good", `Connected to ${device.deviceNickname || device.deviceId}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setCrownState("failed");
+      setBrainSource("simulator");
+      setCrownStatus(message);
+      addLog("Crown", "bad", message);
+    }
+  };
+
+  const disconnectCrown = async () => {
+    await neurosityClientRef.current?.disconnect();
+    neurosityClientRef.current = null;
+    setCrownState("idle");
+    setBrainSource("simulator");
+    setCrownStatus("Not connected");
+    setCrownDeviceName("");
+    setCrownBattery(null);
+    setSignalQuality(null);
+    addLog("Crown", "warn", "Crown disconnected; simulator is active.");
+  };
+
+  const handleNeurositySnapshot = (snapshot: NeurositySnapshot) => {
+    if (snapshot.device) {
+      setCrownDeviceName(
+        snapshot.device.deviceNickname || snapshot.device.deviceId,
+      );
+    }
+
+    if (snapshot.status) {
+      setCrownStatus(snapshot.status.state);
+      setCrownBattery(snapshot.status.battery ?? null);
+    }
+
+    if (typeof snapshot.signalQuality === "number") {
+      setSignalQuality(snapshot.signalQuality);
+    }
+
+    if (typeof snapshot.focus === "number") {
+      setFocus(Number(snapshot.focus.toFixed(2)));
+      setBrainSource("crown");
+    }
   };
 
   const runIdentifyFinch = async () => {
@@ -459,11 +572,15 @@ export function App() {
               }
             />
             <WizardStep
-              complete={identityState === "confirmed"}
+              complete={identityState === "confirmed" && crownState === "connected"}
               active={wizardStep === 4}
-              icon={CheckCircle2}
-              title="Ready for NeuroLab"
-              detail="Crown setup is coming next; Finch lab controls are available now."
+              icon={Brain}
+              title="Crown"
+              detail={
+                crownState === "connected"
+                  ? "Crown focus is streaming into NeuroLab."
+                  : "Connect Crown here when you are ready for live focus."
+              }
             />
           </div>
 
@@ -653,12 +770,113 @@ export function App() {
         </aside>
       </section>
 
+      <section className="crown-band">
+        <div className="crown-panel">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Crown Beta</p>
+              <h2>Neurosity connection</h2>
+            </div>
+            <span className={`status ${crownState === "connected" ? "connected" : crownState === "failed" ? "failed" : crownState === "connecting" ? "checking" : "idle"}`}>
+              {crownState === "connected"
+                ? "Connected"
+                : crownState === "connecting"
+                  ? "Connecting"
+                  : crownState === "failed"
+                    ? "Needs attention"
+                    : "Simulator"}
+            </span>
+          </div>
+
+          <div className="crown-form">
+            <label>
+              Neurosity email
+              <input
+                value={crownEmail}
+                onChange={(event) => setCrownEmail(event.target.value)}
+                autoComplete="username"
+                placeholder="teacher@example.org"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={crownPassword}
+                onChange={(event) => setCrownPassword(event.target.value)}
+                autoComplete="current-password"
+                placeholder="Not saved"
+              />
+            </label>
+            <label>
+              Device ID or nickname
+              <input
+                value={crownSelector}
+                onChange={(event) => setCrownSelector(event.target.value)}
+                placeholder="Optional"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+
+          <div className="crown-actions">
+            <button
+              className="primary"
+              onClick={connectCrown}
+              disabled={
+                busyLabel !== null ||
+                crownState === "connecting" ||
+                !crownEmail.trim() ||
+                !crownPassword
+              }
+              title="Connect to Neurosity and stream focus"
+            >
+              <Brain size={18} aria-hidden="true" />
+              Connect Crown
+            </button>
+            <button
+              onClick={disconnectCrown}
+              disabled={crownState !== "connected" && crownState !== "failed"}
+              title="Disconnect Crown and return to simulator"
+            >
+              <LogOut size={18} aria-hidden="true" />
+              Disconnect
+            </button>
+          </div>
+        </div>
+
+        <div className="crown-readout">
+          <div className="readout-item">
+            <span>Device</span>
+            <strong>{crownDeviceName || "No Crown selected"}</strong>
+          </div>
+          <div className="readout-item">
+            <span>Status</span>
+            <strong>{crownStatus}</strong>
+          </div>
+          <div className="readout-item">
+            <span>Battery</span>
+            <strong>
+              {typeof crownBattery === "number" ? `${crownBattery}%` : "--"}
+            </strong>
+          </div>
+          <div className="readout-item">
+            <span>Signal</span>
+            <strong>
+              {typeof signalQuality === "number"
+                ? formatPercentish(signalQuality)
+                : "--"}
+            </strong>
+          </div>
+        </div>
+      </section>
+
       <section className="experiment-band">
         <div className="experiment-panel">
           <div className="panel-header">
             <div>
               <p className="section-kicker">Experiment 01</p>
-              <h2>Focus simulator</h2>
+              <h2>{brainSource === "crown" ? "Live focus" : "Focus simulator"}</h2>
             </div>
             <span className={experimentRunning ? "status connected" : "status idle"}>
               {experimentRunning ? "Running" : "Paused"}
@@ -687,7 +905,10 @@ export function App() {
                 step="0.01"
                 value={focus}
                 onChange={(event) => setFocus(Number(event.target.value))}
-                disabled={experimentMode === "sweep" && experimentRunning}
+                disabled={
+                  brainSource === "crown" ||
+                  (experimentMode === "sweep" && experimentRunning)
+                }
               />
             </label>
             <label>
@@ -726,11 +947,15 @@ export function App() {
                   mode === "manual" ? "sweep" : "manual",
                 )
               }
-              disabled={busyLabel !== null}
+              disabled={busyLabel !== null || brainSource === "crown"}
               title="Toggle manual focus control or automatic sweep"
             >
               <SlidersHorizontal size={18} aria-hidden="true" />
-              {experimentMode === "manual" ? "Manual" : "Sweep"}
+              {brainSource === "crown"
+                ? "Crown"
+                : experimentMode === "manual"
+                  ? "Manual"
+                  : "Sweep"}
             </button>
             <label className="toggle-row">
               <input
@@ -858,6 +1083,11 @@ function getWizardStep(state: ConnectionState, identityState: IdentityState) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function formatPercentish(value: number) {
+  const percent = value <= 1 ? value * 100 : value;
+  return `${Math.round(percent)}%`;
 }
 
 function PathNode({ label, active }: { label: string; active: boolean }) {

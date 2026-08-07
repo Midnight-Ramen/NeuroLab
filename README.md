@@ -70,16 +70,29 @@ npm run preview
 - Safe Finch wheel pulses with capped speeds and automatic stop.
 - Focus simulator that maps a mock focus value to the Finch beak.
 - Optional focus-driven wheel control for supervised testing.
+- Neurosity Crown beta connection for live Focus, status, battery, and signal quality.
 - Robot selector for `A`, `B`, or `C`.
 - Diagnostics that preserve the raw response/error for classroom testing.
 
-Neurosity integration should come after this hardware bridge test succeeds on the real school-managed Chrome setup.
+The Crown connection is intentionally a beta layer. The app does not save the Neurosity password. For a classroom deployment, OAuth/server-side secret handling should replace direct username/password login.
 
 ## Experiment 01
 
-The focus simulator is a rehearsal for the eventual Neurosity integration.
+The focus simulator is a rehearsal for the Neurosity integration and remains available when no Crown is connected.
 
 - `Manual` lets a student drag the focus slider.
 - `Sweep` automatically moves the focus value up and down.
 - `Run` maps focus above the threshold to a green beak and focus below the threshold to a red/orange beak.
 - `Drive` optionally maps high focus to slow forward movement. Keep this supervised and use the fixed `STOP` button at any time.
+
+## Crown Beta
+
+The Crown panel uses the official Neurosity JavaScript SDK in the browser.
+
+1. Make sure the Crown is claimed to the Neurosity account and is online.
+2. Enter the Neurosity account email and password.
+3. Optionally enter a device ID or nickname if the account has multiple devices.
+4. Click `Connect Crown`.
+5. Watch status, battery, signal quality, and Focus update.
+
+When Crown is connected, Experiment 01 switches from simulator focus to live Crown focus. Click `Disconnect` to return to the simulator.

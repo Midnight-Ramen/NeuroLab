@@ -509,6 +509,66 @@ input {
   gap: 24px;
 }
 
+.crown-band {
+  padding: 0 clamp(20px, 5vw, 72px) 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 24px;
+}
+
+.crown-panel,
+.crown-readout {
+  border: 1px solid #dce4df;
+  border-radius: 8px;
+  padding: 24px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(44, 58, 52, 0.08);
+}
+
+.crown-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.crown-actions {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.crown-readout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.readout-item {
+  min-height: 92px;
+  border: 1px solid #dce4df;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfa;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.readout-item span {
+  color: #5d7168;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.readout-item strong {
+  color: #17211d;
+  overflow-wrap: anywhere;
+  font-size: 1.08rem;
+}
+
 .experiment-band {
   padding: 0 clamp(20px, 5vw, 72px) 28px;
   display: grid;
@@ -685,13 +745,15 @@ pre {
 @media (max-width: 920px) {
   .hero,
   .workspace,
+  .crown-band,
   .experiment-band,
   .data-band {
     grid-template-columns: 1fr;
   }
 
   .label-grid,
-  .wizard-steps {
+  .wizard-steps,
+  .crown-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -723,7 +785,10 @@ pre {
   .experiment-actions,
   .label-grid,
   .wizard-steps,
-  .wizard-actions {
+  .wizard-actions,
+  .crown-form,
+  .crown-actions,
+  .crown-readout {
     grid-template-columns: 1fr;
   }
 
